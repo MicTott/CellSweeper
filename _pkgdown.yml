@@ -1,5 +1,10 @@
 url: https://MicTott.github.io/CellSweeper/
 
+home:
+  strip_header: true
+  sidebar:
+    structure: [links, license, community, citation]
+
 template:
   bootstrap: 5
 
@@ -43,5 +48,7 @@ reference:
       - plotClusterSummary
 
   - title: "Utilities"
+    desc: "Spatial homogeneity and permutation testing"
     contents:
-      - spatialHomogeneity
+      - computeNeighborhoodHomogeneity
+      - permuteHomogeneity
