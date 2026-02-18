@@ -1,0 +1,364 @@
+---
+title: "Getting Started with CellSweeper"
+author:
+  - name: Michael Totty
+    affiliation: "Johns Hopkins Bloomberg School of Public Health"
+date: "`r Sys.Date()`"
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{Getting Started with CellSweeper}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    collapse = TRUE,
+    comment = "#>",
+    message = TRUE
+    
+)
+```
+
+# Introduction
+
+**CellSweeper** provides cluster-aware quality control (QC) for single-cell
+resolution spatial transcriptomics data, including platforms such as Xenium,
+CosMx, MERFISH, Stereo-seq, Slide-seq, and VisiumHD.
+
+It extends the [SpotSweeper](https://bioconductor.org/packages/SpotSweeper)
+framework (Totty, Hicks & Guo, *Nature Methods* 2025) to single-cell
+resolution, where SpotSweeper's core assumption --- that spatial neighbors are
+biologically similar --- breaks down because adjacent cells can be entirely
+different types.
+
+## The three-level QC framework
+
+1. **Level 1 --- Global pre-filtering** (`globalFilter()`): Remove obvious
+   debris (near-zero counts, impossible segmentations).
+2. **Level 2 --- Cluster-level QC** (`clusterCellTypes()` +
+   `flagArtifactClusters()`): Cluster cells in expression space, then identify
+   entire artifact clusters via multivariate pseudobulk outlier detection and
+   spatial dispersion analysis.
+3. **Level 3 --- Within-cluster spatial QC** (`clusterLocalOutliers()`):
+   SpotSweeper-style local outlier detection restricted to same-cluster cells,
+   applied to both transcriptomic and morphological metrics.
+
+# Quick Start
+
+```{r quickstart, eval=FALSE}
+#library(CellSweeper)
+devtools::load_all()
+library(SpatialExperiment)
+library(scuttle)
+
+# Load your SpatialExperiment (e.g., from SpaceTrooper or STexampleData)
+# spe <- readXeniumSPE("/path/to/xenium/output/")
+spe <- STexampleData::STARmapPLUS_mouseBrain()
+
+# Compute standard QC metrics
+spe <- addPerCellQCMetrics(spe,
+    subsets = list(mito = grep("^MT-", rownames(spe))))
+
+# Run full CellSweeper pipeline
+spe <- runCellSweeper(spe)
+
+# Examine results
+table(spe$cellsweeper_qc)
+
+# Remove flagged cells for downstream analysis
+spe_clean <- spe[, !spe$cellsweeper_qc]
+```
+
+# Step-by-Step Workflow
+
+## Step 1: Load data and compute QC metrics
+
+CellSweeper operates on `SpatialExperiment` objects. Standard QC metrics
+should be computed first using `scuttle::addPerCellQCMetrics()`.
+
+For morphological metrics (`Area_um`, `log2AspectRatio`, `log2CountArea`),
+we recommend preprocessing with
+[SpaceTrooper](https://bioconductor.org/packages/SpaceTrooper) before running
+CellSweeper. CellSweeper's defaults are aligned with SpaceTrooper's
+`spatialPerCellQC()` output column names.
+
+```{r load-data, eval=FALSE}
+library(CellSweeper)
+library(SpatialExperiment)
+library(scuttle)
+
+# Example: load Xenium data via SpaceTrooper
+# library(SpaceTrooper)
+# spe <- readXeniumSPE("/path/to/xenium/")
+# spe <- spatialPerCellQC(spe)  # adds Area_um, log2AspectRatio, etc.
+
+# Compute transcriptomic QC metrics
+is_mito <- grep("^MT-", rownames(spe))
+spe <- addPerCellQCMetrics(spe, subsets = list(mito = is_mito))
+```
+
+## Step 2: Global pre-filtering (Level 1)
+
+Remove obvious debris: cells with near-zero counts or impossible
+segmentations. If `Area_um` is present (from SpaceTrooper), area-based
+filtering is also applied.
+
+```{r global-filter, eval=FALSE}
+spe <- globalFilter(spe,
+    min_counts = 5,
+    min_genes = 5,
+    min_area = 10,      # if Area_um available
+    max_area = 5000     # if Area_um available
+)
+```
+
+If `Area_um` exists but `log2CountArea` does not, `globalFilter()` will
+automatically compute transcript density (`CountArea` and `log2CountArea`)
+for downstream use.
+
+## Step 3: Cluster cells (Level 2a)
+
+Cluster cells in expression space to group biologically similar cells.
+This is a coarse clustering --- the goal is broad cell-type groupings,
+not fine subtypes.
+
+```{r cluster, eval=FALSE}
+spe <- clusterCellTypes(spe,
+    resolution = 0.5,
+    regress_covariates = FALSE,
+    exclude_mito = TRUE,
+    exclude_ribo = TRUE,
+    k.neighbors = 50
+)
+
+table(spe$cell_cluster)
+```
+
+If you already have cluster labels (e.g., from a reference-based annotation),
+you can skip clustering:
+
+```{r cluster-existing, eval=FALSE}
+spe <- clusterCellTypes(spe, use_existing = "my_annotation_column")
+```
+
+## Step 4: Flag artifact clusters (Level 2b+c)
+
+Identify entire clusters that are likely technical artifacts. Uses two
+complementary approaches:
+
+- **Pseudobulk multivariate outlier detection**: clusters with extreme
+  QC metric profiles
+- **Spatial dispersion analysis**: artifact clusters tend to be spatially
+  scattered, unlike real cell types
+
+```{r artifact-clusters, eval=FALSE}
+spe <- flagArtifactClusters(spe,
+    metrics = c("sum", "detected"),
+    require_both = TRUE  # must be BOTH a QC outlier AND spatially incoherent
+)
+
+# How many clusters flagged?
+table(spe$cluster_artifact_flag)
+```
+
+## Step 5: Within-cluster spatial QC (Level 3)
+
+The core CellSweeper step: for each non-artifact cluster, detect cells
+that are outliers relative to their same-cluster spatial neighbors.
+
+```{r local-outliers, eval=FALSE}
+spe <- clusterLocalOutliers(spe,
+    metrics = c("sum", "detected"),
+    morpho_metrics = c("Area_um", "log2AspectRatio", "log2CountArea"),
+    k = 36,
+    z_threshold = 3,
+    combine = "union"
+)
+
+table(spe$cellsweeper_outlier)
+```
+
+## Step 6: Examine results
+
+All results are stored in `colData(spe)`:
+
+```{r results, eval=FALSE}
+# Per-metric z-scores and outlier flags
+head(colData(spe)[, c("sum_zscore", "sum_outlier",
+                       "detected_zscore", "detected_outlier")])
+
+# Combined flags
+table(spe$cellsweeper_outlier)   # within-cluster outliers
+table(spe$cluster_artifact_flag) # artifact cluster members
+
+# Remove flagged cells
+spe_clean <- spe[, !spe$cellsweeper_outlier & !spe$cluster_artifact_flag]
+```
+
+# Visualization
+
+CellSweeper provides several plotting functions (require `ggplot2`).
+
+## Point-based plots
+
+The default rendering uses points at cell centroid coordinates. These work
+on any `SpatialExperiment`, regardless of whether polygon data is available.
+
+```{r viz-points, eval=FALSE}
+library(ggplot2)
+
+# Spatial plot colored by library size, outliers circled in red
+plotSpatialOutliers(spe, metric = "sum")
+
+# Same plot for mitochondrial percentage
+plotSpatialOutliers(spe, metric = "subsets_mito_percent",
+    outlier_col = "subsets_mito_percent_outlier",
+    colors = c("grey90", "darkred"))
+
+# Per-cluster QC distributions (violin + boxplot)
+plotClusterQC(spe, metric = "sum")
+plotClusterQC(spe, metric = "detected")
+
+# Spatial clusters with artifact clusters greyed out
+plotSpatialDispersion(spe)
+
+# Cluster-level QC summary (Mahalanobis distances + spatial homogeneity)
+summary_plots <- plotClusterSummary(spe)
+summary_plots$mahalanobis
+summary_plots$homogeneity
+```
+
+## Polygon-based visualization
+
+When cell boundary polygons are available --- for example, from SpaceTrooper's
+`addPolygonsToSPE()` which stores `sf` geometry in
+`colData(spe)$polygons` --- CellSweeper's spatial plots can render filled cell
+boundaries instead of points. This provides a much richer view of the tissue
+and makes segmentation artifacts visually apparent.
+
+**Requirements:** The `sf` package must be installed
+(`install.packages("sf")`).
+
+### Auto-detection
+
+By default (`use_polygons = "auto"`), polygon rendering activates
+automatically when the polygon column exists and `sf` is installed.
+No code changes are needed --- the same plotting calls work with both
+point and polygon data:
+
+```{r polygon-auto, eval=FALSE}
+# These calls auto-detect polygons and render cell boundaries
+# If no polygons are present, they fall back to points seamlessly
+plotSpatialOutliers(spe, metric = "sum")
+plotSpatialDispersion(spe)
+```
+
+### Explicit control
+
+You can force a specific rendering mode:
+
+```{r polygon-explicit, eval=FALSE}
+# Force polygon rendering (errors if polygons are unavailable)
+plotSpatialOutliers(spe, metric = "sum", use_polygons = TRUE)
+
+# Force point rendering even when polygons exist
+plotSpatialOutliers(spe, metric = "sum", use_polygons = FALSE)
+```
+
+### Outlier visualization with polygons
+
+When using polygons, `plotSpatialOutliers()` fills each cell polygon by the
+QC metric value and overlays a colored border on outlier cells. This makes
+it easy to spot which cells were flagged and why:
+
+```{r polygon-outliers, eval=FALSE}
+# Library size: outliers get red borders over the blue gradient fill
+plotSpatialOutliers(spe, metric = "sum",
+    colors = c("grey90", "navy"),
+    outlier_color = "red",
+    outlier_stroke = 0.8)
+
+# Cell area: spot segmentation errors
+plotSpatialOutliers(spe, metric = "Area_um",
+    outlier_col = "Area_um_outlier",
+    colors = c("white", "darkgreen"),
+    outlier_color = "magenta")
+
+# Transcript density: low-quality cells
+plotSpatialOutliers(spe, metric = "log2CountArea",
+    outlier_col = "log2CountArea_outlier",
+    colors = c("grey95", "darkorange"))
+```
+
+### Cluster visualization with polygons
+
+`plotSpatialDispersion()` fills polygons by cluster identity, with artifact
+clusters rendered in grey. Thin borders between cells help delineate
+individual cell boundaries:
+
+```{r polygon-clusters, eval=FALSE}
+# Default: thin grey borders to delineate cells within clusters
+plotSpatialDispersion(spe)
+
+# No borders (faster for large datasets)
+plotSpatialDispersion(spe,
+    polygon_border_color = NA)
+
+# Thicker, darker borders for presentation figures
+plotSpatialDispersion(spe,
+    polygon_border_color = "grey20",
+    polygon_border_width = 0.15)
+```
+
+### Custom polygon column
+
+If your polygon data is stored under a different column name, specify it
+with `polygon_col`:
+
+```{r polygon-custom-col, eval=FALSE}
+# SpaceTrooper may use "polygons.global" for global coordinates
+plotSpatialOutliers(spe, metric = "sum",
+    polygon_col = "polygons.global")
+```
+
+### Recommended SpaceTrooper + CellSweeper workflow
+
+A complete workflow combining SpaceTrooper preprocessing with CellSweeper QC
+and polygon visualization:
+
+```{r full-workflow, eval=FALSE}
+library(SpaceTrooper)
+library(CellSweeper)
+library(scuttle)
+library(ggplot2)
+
+# 1. Load platform-specific data and compute morphology metrics
+spe <- readXeniumSPE("/path/to/xenium/output/")
+spe <- spatialPerCellQC(spe)       # adds Area_um, log2AspectRatio, etc.
+spe <- addPolygonsToSPE(spe)       # adds sf polygons to colData
+
+# 2. Compute transcriptomic QC metrics
+spe <- addPerCellQCMetrics(spe,
+    subsets = list(mito = grep("^MT-", rownames(spe))))
+
+# 3. Run CellSweeper pipeline
+spe <- runCellSweeper(spe,
+    morpho_metrics = c("Area_um", "log2AspectRatio", "log2CountArea"))
+
+# 4. Visualize with polygon boundaries (auto-detected)
+plotSpatialOutliers(spe, metric = "sum")
+plotSpatialOutliers(spe, metric = "Area_um",
+    outlier_col = "Area_um_outlier")
+plotSpatialDispersion(spe)
+
+# 5. Compare before/after with point fallback
+plotSpatialOutliers(spe, metric = "sum", use_polygons = FALSE)  # points
+plotSpatialOutliers(spe, metric = "sum", use_polygons = TRUE)   # polygons
+```
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```

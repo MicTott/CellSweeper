@@ -30,7 +30,8 @@ biocViews:
     Transcriptomics,
     QualityControl,
     GeneExpression,
-    SingleCell
+    SingleCell,
+    Clustering
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
@@ -40,20 +41,19 @@ Imports:
     SpatialExperiment,
     SingleCellExperiment,
     SummarizedExperiment,
-    S4Vectors,
     BiocNeighbors,
-    scuttle,
     scran,
     scater,
     bluster,
-    spatialEco,
     stats,
     Matrix,
     methods
 Suggests:
+    scuttle,
     robustbase,
     escheR,
     ggplot2,
+    sf,
     BiocParallel,
     BiocStyle,
     testthat (>= 3.0.0),
@@ -62,4 +62,3 @@ Suggests:
     rmarkdown
 Config/testthat/edition: 3
 VignetteBuilder: knitr
-LazyData: false
