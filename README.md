@@ -20,7 +20,7 @@ CellSweeper provides a QC framework for single-cell resolution spatial transcrip
 # BiocManager::install("CellSweeper")
 
 # Or install the development version from GitHub
-BiocManager::install("MicTott/CellSweeper")
+devtools::install_github("MicTott/CellSweeper")
 ```
 
 ## Integration with SpaceTrooper
