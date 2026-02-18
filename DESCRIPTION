@@ -6,23 +6,14 @@ Date: 2026-02-17
 Authors@R: c(
     person("Michael", "Totty", email = "mictott@gmail.com",
            role = c("aut", "cre"),
-           comment = c(ORCID = "0000-0002-9292-8556")),
-    person("Stephanie", "Hicks", email = "shicks19@jhu.edu",
-           role = c("aut"),
-           comment = c(ORCID = "0000-0002-7858-0231")),
-    person("Boyi", "Guo", email = "boyi.guo.work@gmail.com",
-           role = c("aut"),
-           comment = c(ORCID = "0000-0003-2950-2349")))
-Description: Cluster-aware quality control (QC) for single-cell resolution
+           comment = c(ORCID = "0000-0002-9292-8556")))
+Description: Spatially aware quality control (QC) for single-cell resolution
     spatial transcriptomics data (Xenium, CosMx, MERFISH, Stereo-seq,
     Slide-seq, VisiumHD). CellSweeper extends the SpotSweeper framework by
     first clustering cells in gene expression space, then performing
-    spatially-aware outlier detection within each cluster. This three-level
-    approach (global pre-filtering, cluster-level artifact detection,
-    within-cluster spatial QC) restores the local homogeneity assumption
-    required for robust spatial outlier detection at single-cell resolution.
+    spatially-aware outlier detection within each cell type cluster. 
 License: MIT + file LICENSE
-URL: https://github.com/MicTott/CellSweeper
+URL: https://MicTott.github.io/CellSweeper/, https://github.com/MicTott/CellSweeper
 BugReports: https://github.com/MicTott/CellSweeper/issues
 biocViews:
     Software,

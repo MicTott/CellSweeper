@@ -1,0 +1,47 @@
+url: https://MicTott.github.io/CellSweeper/
+
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left:  [intro, reference, articles]
+    right: [search, github]
+  components:
+    github:
+      icon: fa-github
+      href: https://github.com/MicTott/CellSweeper
+
+reference:
+  - title: "Pipeline"
+    desc: "Run the full CellSweeper QC pipeline"
+    contents:
+      - runCellSweeper
+
+  - title: "Level 1: Global Pre-Filtering"
+    desc: "Remove obvious debris and impossible segmentations"
+    contents:
+      - globalFilter
+
+  - title: "Level 2: Cluster-Level QC"
+    desc: "Cluster cells and identify artifact clusters"
+    contents:
+      - clusterCellTypes
+      - flagArtifactClusters
+
+  - title: "Level 3: Within-Cluster Spatial QC"
+    desc: "Detect outlier cells within each cluster using spatial context"
+    contents:
+      - clusterLocalOutliers
+
+  - title: "Visualization"
+    desc: "Plot QC results"
+    contents:
+      - plotSpatialOutliers
+      - plotClusterQC
+      - plotSpatialDispersion
+      - plotClusterSummary
+
+  - title: "Utilities"
+    contents:
+      - spatialHomogeneity

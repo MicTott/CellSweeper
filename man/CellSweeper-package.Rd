@@ -11,6 +11,7 @@ Cluster-aware quality control (QC) for single-cell resolution spatial transcript
 \seealso{
 Useful links:
 \itemize{
+  \item \url{https://MicTott.github.io/CellSweeper/}
   \item \url{https://github.com/MicTott/CellSweeper}
   \item Report bugs at \url{https://github.com/MicTott/CellSweeper/issues}
 }
