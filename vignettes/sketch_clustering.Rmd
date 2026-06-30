@@ -1,0 +1,482 @@
+---
+title: "Sketch-Based Clustering for Large Datasets"
+author:
+  - name: Michael Totty
+    affiliation: "Johns Hopkins Bloomberg School of Public Health"
+date: "`r Sys.Date()`"
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{Sketch-Based Clustering for Large Datasets}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    collapse = TRUE,
+    comment = "#>",
+    message = TRUE,
+    fig.width = 7,
+    fig.height = 5
+)
+```
+
+# Introduction
+
+Single-cell resolution spatial transcriptomics platforms routinely produce
+datasets with hundreds of thousands to millions of cells. CellSweeper's
+default clustering pipeline --- log-normalize, PCA, SNN graph, Leiden ---
+scales well to tens of thousands of cells but can become a bottleneck at
+larger scales, primarily due to the SNN graph construction and community
+detection steps.
+
+CellSweeper provides a **sketch-based clustering** approach to handle
+these large datasets efficiently. The idea is simple:
+
+1. Compute PCA on all cells (this scales linearly)
+2. **Subsample** a representative subset of cells
+3. Cluster only the subsample
+4. **Project** cluster labels to all remaining cells via nearest-centroid
+   assignment in PCA space
+
+This can reduce clustering time by orders of magnitude while preserving
+cluster quality, especially when combined with other performance options
+like approximate PCA and approximate nearest neighbors.
+
+In this vignette we demonstrate sketch clustering on a real dataset of
+~77,000 nuclei from the
+[spatialDLPFC](http://research.libd.org/spatialDLPFC/) project, available
+through the `spatialLIBD` package.
+
+> **Note on chunk evaluation.** Code chunks below are set
+> `eval=FALSE` because the snRNA-seq dataset is ~1.1 GB and downloading,
+> processing, and clustering it during package build is not feasible.
+> The companion `getting_started.Rmd` vignette runs end-to-end on a
+> compact synthetic dataset and exercises every exported function.
+
+# Loading the data
+
+We use the single-nucleus RNA-seq data from the spatialDLPFC project.
+This dataset contains 77,604 nuclei from human dorsolateral prefrontal
+cortex with expert-annotated cell types, making it an excellent test case
+for sketch clustering:
+
+- It has a realistic number of cells (~77k)
+- Cell types are imbalanced (excitatory neurons dominate, but rare
+  populations like microglia and endothelial/mural cells are present)
+- Expert annotations allow us to evaluate whether sketch clustering
+  preserves rare cell types
+
+```{r load-data, eval=FALSE}
+# library(CellSweeper)
+devtools::load_all()
+library(spatialLIBD)
+library(SpatialExperiment)
+library(SingleCellExperiment)
+library(scuttle)
+library(BiocNeighbors)
+library(BiocSingular)
+library(BiocParallel)
+
+# Download the annotated snRNA-seq dataset
+# (downloads ~1.1 GB on first use, cached for subsequent runs)
+zip_path <- fetch_data("spatialDLPFC_snRNAseq")
+tmpdir <- tempdir()
+unzip(zip_path, exdir = tmpdir)
+sce <- HDF5Array::loadHDF5SummarizedExperiment(
+    file.path(tmpdir, "sce_DLPFC_annotated")
+)
+
+# 77,604 cells x 36,601 genes
+dim(sce)
+table(sce$cellType_broad_hc)
+#  Astro EndoMural Excit Inhib Micro Oligo   OPC Ambiguous
+#   3979      2157 24809 11067  1601 10894  1940    21157
+```
+
+The dataset has 8 broad cell types with highly imbalanced frequencies ---
+excitatory neurons make up 32% of cells while microglia are only 2%.
+There are also 21,157 "Ambiguous" cells that could not be confidently
+assigned to a single type.
+
+Since this is snRNA-seq data (no tissue coordinates), we convert to a
+`SpatialExperiment` with placeholder spatial coordinates. Clustering
+operates entirely in expression space and does not use spatial
+coordinates.
+
+```{r convert-spe, eval=FALSE}
+# Convert SingleCellExperiment to SpatialExperiment
+# Realize HDF5-backed counts into an in-memory sparse matrix
+counts_mat <- as(counts(sce), "dgCMatrix")
+
+coords <- matrix(rnorm(ncol(sce) * 2), ncol = 2,
+    dimnames = list(colnames(sce), c("x", "y")))
+spe <- SpatialExperiment(
+    assays = list(counts = counts_mat),
+    spatialCoords = coords,
+    colData = colData(sce)
+)
+
+# Ensure QC metrics are present
+spe <- addPerCellQCMetrics(spe,
+    subsets = list(mito = grep("^MT-", rownames(spe))))
+
+# Store expert annotations for later comparison
+spe$expert_broad <- spe$cellType_broad_hc
+spe$expert_fine <- spe$cellType_hc
+```
+
+# The problem with uniform random sampling
+
+The naive approach --- `sample(n_cells, subsample_size)` --- draws cells
+uniformly at random. This works adequately when cell types are roughly
+balanced, but our DLPFC dataset is highly imbalanced. Uniform sampling of
+20,000 cells from 77,604 would yield only ~330 microglia (2% of 20,000),
+potentially too few for the clustering algorithm to resolve them as a
+distinct group.
+
+# Leverage score sampling
+
+CellSweeper's default sketch approach uses **leverage score sampling**
+instead of uniform random sampling. Leverage scores come from randomized
+numerical linear algebra and measure how much each cell contributes to
+the low-rank PCA structure of the dataset.
+
+## How it works
+
+After PCA, each cell is represented as a point in PC space. The
+**statistical leverage** of cell $i$ is:
+
+$$\ell_i = \sum_{j=1}^{d} u_{ij}^2$$
+
+where $U$ is the matrix of left singular vectors (the PCA loadings
+normalized to unit variance per component) and $d$ is the number of PCs.
+
+Cells in dense, common regions of PC space have low leverage --- they are
+well-represented by many nearby cells and contribute little unique
+information. Cells in sparse regions (rare cell types, transitional states,
+outliers) have high leverage --- they disproportionately define the PC
+directions and would be poorly represented if missed.
+
+Sampling with probability proportional to leverage scores ensures that:
+
+- **Rare populations are preserved.** The ~1,600 microglia and ~2,200
+  endothelial/mural cells occupy unique regions of PC space and will
+  have elevated leverage scores, so they are sampled at a higher rate
+  than their small frequencies would suggest under uniform sampling.
+- **Common populations remain well-covered.** Even with leverage-biased
+  sampling, the sheer number of excitatory neurons ensures adequate
+  representation.
+- **The sketch faithfully represents the full PCA structure.** This is
+  the key theoretical guarantee --- leverage score sampling preserves the
+  spectral properties of the data matrix.
+
+## Implementation in CellSweeper
+
+Under the hood, CellSweeper:
+
+1. Runs PCA on all cells
+2. Scales each PC column to unit variance (recovering the left singular
+   vectors from the PC scores)
+3. Computes leverage as the row sum of squares
+4. Normalizes to probabilities and samples without replacement
+5. Clusters the subsample via Leiden (or mini-batch k-means)
+6. Computes cluster centroids in PCA space
+7. Assigns every cell to its nearest centroid via `BiocNeighbors::queryKNN()`
+
+# Comparison: leverage vs. random vs. full clustering
+
+Now we compare three approaches on our 77k-cell dataset: full clustering
+(all cells, no subsample), sketch clustering with leverage sampling
+(20k subsample), and sketch with random sampling (20k subsample).
+
+```{r comparison, eval=FALSE}
+# Full clustering (no subsample) --- baseline
+system.time(
+    spe_full <- clusterCellTypes(spe,
+        resolution = 0.5,
+        regress_covariates = FALSE,
+        exclude_mito = TRUE
+    )
+)
+
+# Sketch clustering with leverage sampling (default)
+system.time(
+    spe_lev <- clusterCellTypes(spe,
+        subsample = 20000,
+        subsample_method = "leverage",
+        resolution = 0.5,
+        regress_covariates = FALSE,
+        exclude_mito = TRUE
+    )
+)
+
+# Sketch clustering with random sampling
+system.time(
+    spe_rand <- clusterCellTypes(spe,
+        subsample = 20000,
+        subsample_method = "random",
+        resolution = 0.5,
+        regress_covariates = FALSE,
+        exclude_mito = TRUE
+    )
+)
+```
+
+## Evaluating cluster quality against expert annotations
+
+We can compare the discovered clusters against the expert-annotated cell
+types to assess how well each method recovers the known biology:
+
+```{r evaluate, eval=FALSE}
+# Cross-tabulate discovered clusters vs expert cell types
+# Full clustering
+table(spe_full$cell_cluster, spe_full$expert_broad)
+
+# Leverage sketch
+table(spe_lev$cell_cluster, spe_lev$expert_broad)
+
+# Random sketch
+table(spe_rand$cell_cluster, spe_rand$expert_broad)
+```
+
+The key question is whether rare populations (Micro, EndoMural, OPC) are
+resolved as distinct clusters. Leverage sampling increases the chance that
+these rare cells are included in the sketch, giving the clustering algorithm
+enough representatives to identify them as separate groups.
+
+On balanced datasets, both sampling methods produce similar results. The
+advantage of leverage sampling becomes apparent when rare populations are
+present --- leverage sampling resolves them as distinct clusters more
+reliably.
+
+## Visualizing clusters with UMAP
+
+We can visualize the clustering results on a shared UMAP embedding to
+compare how well each method resolves cell populations. Since all three
+methods share the same PCA (computed on all cells), we compute UMAP once
+and overlay each set of cluster labels.
+
+```{r umap-compute, eval=FALSE}
+library(scater)
+library(ggplot2)
+
+# Compute UMAP from the shared PCA (stored by clusterCellTypes)
+spe_full <- scater::runUMAP(spe_full, dimred = "PCA")
+umap_df <- as.data.frame(reducedDim(spe_full, "UMAP"))
+colnames(umap_df) <- c("UMAP1", "UMAP2")
+
+# Attach cluster labels from each method
+umap_df$full_cluster <- spe_full$cell_cluster
+umap_df$leverage_cluster <- spe_lev$cell_cluster
+umap_df$random_cluster <- spe_rand$cell_cluster
+umap_df$expert <- spe_full$expert_broad
+```
+
+```{r umap-plot, eval=FALSE, fig.width=10, fig.height=8}
+# Expert annotations (ground truth)
+p_expert <- ggplot(umap_df, aes(UMAP1, UMAP2, color = expert)) +
+    geom_point(size = 0.1, alpha = 0.3) +
+    ggtitle("Expert annotations") +
+    guides(color = guide_legend(override.aes = list(size = 3, alpha = 1))) +
+    theme_minimal()
+
+# Full clustering (all 77k cells)
+p_full <- ggplot(umap_df, aes(UMAP1, UMAP2, color = full_cluster)) +
+    geom_point(size = 0.1, alpha = 0.3) +
+    ggtitle("Full clustering (all cells)") +
+    theme_minimal() + theme(legend.position = "none")
+
+# Sketch: leverage sampling (20k subsample)
+p_lev <- ggplot(umap_df, aes(UMAP1, UMAP2, color = leverage_cluster)) +
+    geom_point(size = 0.1, alpha = 0.3) +
+    ggtitle("Sketch: leverage sampling (20k)") +
+    theme_minimal() + theme(legend.position = "none")
+
+# Sketch: random sampling (20k subsample)
+p_rand <- ggplot(umap_df, aes(UMAP1, UMAP2, color = random_cluster)) +
+    geom_point(size = 0.1, alpha = 0.3) +
+    ggtitle("Sketch: random sampling (20k)") +
+    theme_minimal() + theme(legend.position = "none")
+
+# Arrange in a 2x2 grid
+gridExtra::grid.arrange(p_expert, p_full, p_lev, p_rand, ncol = 2)
+```
+
+The UMAP plots reveal how each clustering approach partitions the
+expression landscape. The expert annotations provide the ground truth,
+while the full and sketch-based clusterings should show similar broad
+structure. Differences between leverage and random sketch are most visible
+in small, isolated UMAP islands corresponding to rare populations.
+
+# The `leverage_alpha` mixing parameter
+
+Pure leverage sampling can occasionally over-concentrate on extreme
+outliers at the expense of the "bulk" of common cell types. The
+`leverage_alpha` parameter controls a mixture between leverage-biased
+and uniform sampling:
+
+$$p_i = \alpha \cdot \frac{\ell_i}{\sum_j \ell_j} + (1 - \alpha) \cdot \frac{1}{n}$$
+
+- `leverage_alpha = NULL` (default): pure leverage scores
+- `leverage_alpha = 0.9`: 90% leverage + 10% uniform
+- `leverage_alpha = 0.5`: equal mixture
+
+```{r alpha-example, eval=FALSE}
+# Mix leverage with uniform for more balanced coverage
+spe_mixed <- clusterCellTypes(spe,
+    subsample = 20000,
+    leverage_alpha = 0.9,    # 90% leverage + 10% uniform
+    resolution = 0.5,
+    regress_covariates = FALSE,
+    exclude_mito = TRUE
+)
+table(spe_mixed$cell_cluster, spe_mixed$expert_broad)
+```
+
+For most datasets, pure leverage (`leverage_alpha = NULL`) works well.
+Consider adding a uniform component (`0.5`--`0.9`) if you find that
+the sketch over-represents very small outlier populations at the expense
+of resolving subtypes within the dominant population.
+
+# Multi-sample data and Harmony
+
+When working with multi-sample datasets, `clusterCellTypes()` automatically
+applies [Harmony](https://portals.broadinstitute.org/harmony/) batch
+correction on the PCA embedding before clustering. In the sketch workflow,
+Harmony runs on the **full** PCA matrix (all cells), and then the subsample
+is drawn from the corrected embedding. This ensures batch correction is
+learned from the complete dataset, not just the sketch.
+
+```{r harmony-sketch, eval=FALSE}
+# Multi-sample + sketch: Harmony runs on full PCA, then subsample
+spe <- clusterCellTypes(spe,
+    subsample = 20000,
+    samples = "sample_id",  # Harmony uses this for batch correction
+    resolution = 0.5,
+    regress_covariates = FALSE
+)
+
+# Both embeddings are available
+dim(reducedDim(spe, "PCA"))      # uncorrected
+dim(reducedDim(spe, "HARMONY"))  # batch-corrected (used for clustering)
+```
+
+# Combining with other performance options
+
+The sketch approach can be combined with CellSweeper's other performance
+features for maximum speed on very large datasets:
+
+```{r full-fast, eval=FALSE}
+library(BiocSingular)
+library(BiocNeighbors)
+
+spe_fast <- clusterCellTypes(spe,
+    # Sketch clustering
+    subsample = 20000,
+    subsample_method = "leverage",
+
+    # Approximate PCA (IRLBA instead of exact SVD)
+    BSPARAM = IrlbaParam(),
+
+    # Approximate nearest neighbors (HNSW for SNN graph)
+    BNPARAM = HnswParam(),
+
+    # Multi-threaded graph construction + Leiden
+    num_threads = 4,
+
+    resolution = 0.5,
+    regress_covariates = FALSE,
+    exclude_mito = TRUE
+)
+```
+
+Or through the full pipeline wrapper:
+
+```{r wrapper-fast, eval=FALSE}
+library(BiocParallel)
+library(BiocSingular)
+library(BiocNeighbors)
+
+spe <- runCellSweeper(spe,
+    # Sketch clustering
+    subsample = 20000,
+    subsample_method = "leverage",
+
+    # Fast PCA
+    BSPARAM = IrlbaParam(),
+
+    # Approximate NN (used in clustering, outlier detection,
+    # and spatial homogeneity)
+    BNPARAM = HnswParam(),
+
+    # Parallel permutation testing + per-cluster outlier detection
+    BPPARAM = MulticoreParam(4),
+
+    # Multi-threaded Leiden
+    num_threads = 4
+)
+```
+
+## Performance option summary
+
+| Parameter | Default | Fast option | Affects |
+|:----------|:--------|:------------|:--------|
+| `subsample` | `NULL` (all cells) | `20000` | Clustering |
+| `subsample_method` | `"leverage"` | `"leverage"` | Clustering |
+| `BSPARAM` | `NULL` (exact SVD) | `IrlbaParam()` | PCA |
+| `BNPARAM` | `NULL` (exact kNN) | `HnswParam()` | SNN graph, spatial outliers, homogeneity |
+| `BPPARAM` | `NULL` (serial) | `MulticoreParam(4)` | Regression, permutations, per-cluster QC |
+| `num_threads` | `1` | `4` | SNN graph + Leiden |
+| `cluster_method` | `"leiden"` | `"mbkmeans"` | Clustering algorithm |
+
+# Using pre-existing labels
+
+If you already have cluster labels from an external source --- such as a
+reference-based annotation (SingleR, Azimuth), a published cell atlas, or
+a previous analysis --- you can skip clustering entirely. For our DLPFC
+dataset, we can use the expert annotations directly:
+
+```{r use-existing, eval=FALSE}
+# Use the expert broad cell type annotations directly
+spe_annotated <- clusterCellTypes(spe,
+    use_existing = "expert_broad"
+)
+table(spe_annotated$cell_cluster)
+
+# Or in the full pipeline
+spe <- runCellSweeper(spe, use_existing = "expert_broad")
+```
+
+This bypasses all clustering steps (normalization, PCA, graph
+construction) and directly uses the provided labels for the downstream
+artifact detection and within-cluster spatial QC.
+
+# When to use sketch clustering
+
+**Use sketch clustering when:**
+
+- Your dataset has more than ~50,000--100,000 cells
+- Clustering is a bottleneck in your pipeline
+- You are running CellSweeper on multiple samples iteratively
+
+**Skip sketch clustering when:**
+
+- Your dataset has fewer than ~50,000 cells (standard clustering is fast
+  enough)
+- You need the most precise possible cluster boundaries (sketch
+  introduces a small approximation)
+- You already have cluster labels (`use_existing` is faster than any
+  sketch)
+
+As a rule of thumb, set `subsample` to 30,000--100,000. This provides
+enough cells for robust cluster detection while keeping runtime
+manageable. The exact number matters less than you might expect ---
+leverage score sampling ensures that even a relatively small subsample
+captures the diversity of the full dataset.
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```

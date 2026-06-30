@@ -22,7 +22,7 @@ test_that("globalFilter removes low-gene cells", {
 
 test_that("globalFilter applies area filters when column exists", {
     result <- globalFilter(spe, min_counts = 1, min_genes = 1,
-                           min_area = 20, max_area = 200)
+        min_area = 20, max_area = 200)
     expect_true(all(colData(result)$Area_um >= 20))
     expect_true(all(colData(result)$Area_um <= 200))
 })
@@ -34,7 +34,7 @@ test_that("globalFilter skips area filter when column missing", {
     # Should still work, just skip area filtering
     expect_message(
         result <- globalFilter(spe_no_area, min_counts = 1, min_genes = 1,
-                               min_area = 20),
+            min_area = 20),
         "not found"
     )
     expect_s4_class(result, "SpatialExperiment")

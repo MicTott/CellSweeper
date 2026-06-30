@@ -2,7 +2,7 @@
 #'
 #' For each cell, computes the fraction of its k spatial nearest neighbors
 #' that share its cluster label. This measures how spatially coherent a
-#' cluster is — real cell types tend to be spatially organized, while
+#' cluster is <U+2014> real cell types tend to be spatially organized, while
 #' artifact clusters (driven by shared damage signatures) tend to be
 #' spatially scattered.
 #'
@@ -13,6 +13,9 @@
 #' @param k Number of spatial nearest neighbors to use (default 20).
 #' @param samples Column name in \code{colData} for sample IDs
 #'   (default "sample_id"). Spatial neighbors are computed within samples.
+#' @param BNPARAM A \linkS4class{BiocNeighborParam} object specifying the
+#'   nearest-neighbor algorithm (default NULL = exact). Set to
+#'   \code{BiocNeighbors::HnswParam()} for approximate NN on large datasets.
 #'
 #' @return A \linkS4class{SpatialExperiment} object with
 #'   \code{neighborhood_homogeneity} added to \code{colData}.
@@ -40,7 +43,8 @@
 computeNeighborhoodHomogeneity <- function(spe,
                                            cluster_col = "cell_cluster",
                                            k = 20,
-                                           samples = "sample_id") {
+                                           samples = "sample_id",
+                                           BNPARAM = NULL) {
 
     if (!is(spe, "SpatialExperiment")) {
         stop("'spe' must be a SpatialExperiment object.")
@@ -70,9 +74,10 @@ computeNeighborhoodHomogeneity <- function(spe,
         if (length(idx) < 2) next
 
         k_actual <- min(k, length(idx) - 1)
-        nn <- BiocNeighbors::findKNN(coords[idx, , drop = FALSE],
-                                     k = k_actual,
-                                     warn.ties = FALSE)$index
+        fknn_args <- list(X = coords[idx, , drop = FALSE],
+            k = k_actual, warn.ties = FALSE)
+        if (!is.null(BNPARAM)) fknn_args$BNPARAM <- BNPARAM
+        nn <- do.call(BiocNeighbors::findKNN, fknn_args)$index
 
         sample_labels <- labels[idx]
 
@@ -111,15 +116,22 @@ computeNeighborhoodHomogeneity <- function(spe,
 #'   (default 500).
 #' @param samples Column name in \code{colData} for sample IDs
 #'   (default "sample_id").
+#' @param BPPARAM A \code{BiocParallelParam} object for parallel
+#'   permutation computation (default NULL = serial). Set to e.g.
+#'   \code{BiocParallel::MulticoreParam(4)} for 4-core parallelism.
+#' @param BNPARAM A \linkS4class{BiocNeighborParam} object specifying the
+#'   nearest-neighbor algorithm (default NULL = exact). Set to
+#'   \code{BiocNeighbors::HnswParam()} for approximate NN on large datasets.
 #' @param seed Random seed for reproducibility (default 42).
 #'
-#' @return A data.frame with one row per cluster and columns:
-#'   \code{cluster}, \code{observed_homogeneity}, \code{null_mean},
-#'   \code{null_sd}, \code{z_score}, \code{p_value}.
+#' @return A data.frame with one row per (sample, cluster) pair and columns:
+#'   \code{sample}, \code{cluster}, \code{observed_homogeneity},
+#'   \code{null_mean}, \code{null_sd}, \code{z_score}, \code{p_value}.
 #'
 #' @importFrom SummarizedExperiment colData
 #' @importFrom SpatialExperiment spatialCoords
 #' @importFrom BiocNeighbors findKNN
+#' @importFrom BiocParallel bplapply SerialParam bpRNGseed
 #' @importFrom stats sd
 #' @importFrom methods is
 #'
@@ -143,6 +155,8 @@ permuteHomogeneity <- function(spe,
                                k = 20,
                                n_permutations = 500,
                                samples = "sample_id",
+                               BPPARAM = NULL,
+                               BNPARAM = NULL,
                                seed = 42) {
 
     if (!is(spe, "SpatialExperiment")) {
@@ -152,10 +166,9 @@ permuteHomogeneity <- function(spe,
         stop("Column '", cluster_col, "' not found in colData.")
     }
 
-    cd <- colData(spe)
-    coords <- spatialCoords(spe)
-    labels <- as.character(cd[[cluster_col]])
-    unique_clusters <- unique(labels)
+    cd      <- colData(spe)
+    coords  <- spatialCoords(spe)
+    labels  <- as.character(cd[[cluster_col]])
     n_cells <- ncol(spe)
 
     # Handle sample_id
@@ -166,8 +179,20 @@ permuteHomogeneity <- function(spe,
     }
     sample_ids <- unique(sample_vec)
 
+    # --- Build (sample, cluster) task list ---
+    sc_tasks <- list()
+    for (sid in sample_ids) {
+        idx <- which(sample_vec == sid)
+        for (cl in unique(labels[idx])) {
+            sc_tasks <- c(sc_tasks, list(list(sample = sid, cluster = cl)))
+        }
+    }
+    n_tasks <- length(sc_tasks)
+    sc_sample  <- vapply(sc_tasks, function(t) t$sample,  character(1))
+    sc_cluster <- vapply(sc_tasks, function(t) t$cluster, character(1))
+
     # --- Pre-compute kNN index matrices per sample ---
-    nn_list <- list()
+    nn_list  <- list()
     idx_list <- list()
     for (sid in sample_ids) {
         idx <- which(sample_vec == sid)
@@ -177,67 +202,83 @@ permuteHomogeneity <- function(spe,
             next
         }
         k_actual <- min(k, length(idx) - 1)
-        nn_list[[sid]] <- BiocNeighbors::findKNN(
-            coords[idx, , drop = FALSE],
-            k = k_actual, warn.ties = FALSE)$index
+        fknn_args <- list(X = coords[idx, , drop = FALSE],
+            k = k_actual, warn.ties = FALSE)
+        if (!is.null(BNPARAM)) fknn_args$BNPARAM <- BNPARAM
+        nn_list[[sid]] <- do.call(BiocNeighbors::findKNN, fknn_args)$index
     }
 
-    # --- Observed per-cluster mean homogeneity ---
-    .compute_cluster_homogeneity <- function(labs) {
-        # Vectorized computation across all samples
+    # --- Compute per-(sample, cluster) mean homogeneity ---
+    # `labs` are the (possibly permuted) per-cell labels.
+    .compute_sc_homogeneity <- function(labs) {
         homo <- rep(NA_real_, n_cells)
         for (sid in sample_ids) {
             idx <- idx_list[[sid]]
-            nn <- nn_list[[sid]]
+            nn  <- nn_list[[sid]]
             if (is.null(nn)) next
-            sample_labs <- labs[idx]
-            # Vectorized: compare each cell's label to its neighbors' labels
+            sample_labs     <- labs[idx]
             neighbor_labels <- matrix(sample_labs[nn], nrow = nrow(nn))
             homo[idx] <- rowMeans(neighbor_labels == sample_labs,
-                                  na.rm = TRUE)
+                na.rm = TRUE)
         }
-        # Per-cluster means
-        vapply(unique_clusters, function(cl) {
-            mean(homo[labs == cl], na.rm = TRUE)
+        # For the OBSERVED statistic we partition cells by their
+        # original cluster; for permuted draws we partition by the
+        # permuted labels so we are testing the null hypothesis
+        # "labels carry no spatial information" against the same
+        # per-(sample, cluster) summary.
+        vapply(seq_len(n_tasks), function(t) {
+            sid  <- sc_sample[t]
+            cl   <- sc_cluster[t]
+            idx  <- idx_list[[sid]]
+            mask <- labs[idx] == cl
+            if (!any(mask)) return(NA_real_)
+            mean(homo[idx[mask]], na.rm = TRUE)
         }, numeric(1))
     }
 
-    observed <- .compute_cluster_homogeneity(labels)
+    observed <- .compute_sc_homogeneity(labels)
 
     # --- Permutation null ---
-    null_matrix <- matrix(NA_real_, nrow = length(unique_clusters),
-                          ncol = n_permutations)
-    rownames(null_matrix) <- unique_clusters
-
-    for (p in seq_len(n_permutations)) {
-        # Permute cluster labels (within each sample to respect sample structure)
+    .run_one_perm <- function(p) {
         perm_labels <- labels
         for (sid in sample_ids) {
             idx <- idx_list[[sid]]
             perm_labels[idx] <- sample(perm_labels[idx])
         }
-        null_matrix[, p] <- .compute_cluster_homogeneity(perm_labels)
+        .compute_sc_homogeneity(perm_labels)
     }
+
+    # Ensure reproducibility: bplapply does NOT inherit the caller's
+    # set.seed() state. Construct a BPPARAM that carries an explicit
+    # RNGseed so parallel and serial runs agree.
+    if (is.null(BPPARAM)) {
+        BPPARAM <- BiocParallel::SerialParam()
+    }
+    BiocParallel::bpRNGseed(BPPARAM) <- seed
+    null_cols <- BiocParallel::bplapply(
+        seq_len(n_permutations), .run_one_perm, BPPARAM = BPPARAM)
+
+    null_matrix <- do.call(cbind, null_cols)
 
     # --- Compute z-scores and p-values ---
     null_means <- rowMeans(null_matrix)
     null_sds <- apply(null_matrix, 1, sd)
 
     z_scores <- ifelse(null_sds == 0, 0,
-                        (observed - null_means) / null_sds)
+        (observed - null_means) / null_sds)
 
-    # One-sided p-value: proportion of permutations >= observed
-    p_values <- vapply(seq_along(unique_clusters), function(i) {
-        (sum(null_matrix[i, ] >= observed[i]) + 1) / (n_permutations + 1)
+    p_values <- vapply(seq_len(n_tasks), function(i) {
+        (sum(null_matrix[i, ] >= observed[i], na.rm = TRUE) + 1) /
+            (n_permutations + 1)
     }, numeric(1))
 
     data.frame(
-        cluster = unique_clusters,
+        sample               = sc_sample,
+        cluster              = sc_cluster,
         observed_homogeneity = observed,
-        null_mean = null_means,
-        null_sd = null_sds,
-        z_score = z_scores,
-        p_value = p_values,
-        stringsAsFactors = FALSE
+        null_mean            = null_means,
+        null_sd              = null_sds,
+        z_score              = z_scores,
+        p_value              = p_values
     )
 }

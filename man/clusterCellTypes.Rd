@@ -17,8 +17,18 @@ clusterCellTypes(
   n_pcs = 30,
   min_cluster_size = 50,
   k.neighbors = 25,
+  samples = "sample_id",
   cluster_col = "cell_cluster",
   use_existing = NULL,
+  cluster_method = c("leiden", "mbkmeans"),
+  n_clusters = NULL,
+  subsample = NULL,
+  subsample_method = c("leverage", "random"),
+  leverage_alpha = NULL,
+  num_threads = 1,
+  BPPARAM = NULL,
+  BSPARAM = NULL,
+  BNPARAM = NULL,
   seed = 42
 )
 }
@@ -59,6 +69,12 @@ in Level 3.}
 \item{k.neighbors}{Number of nearest neighbors for the shared nearest-
 neighbor graph used in Leiden clustering (default 25).}
 
+\item{samples}{Column name in \code{colData} for sample IDs
+(default "sample_id"). When multiple samples are detected and the
+\code{harmony} package is installed, Harmony batch correction is applied
+to the PCA embedding before clustering. If the column is missing or
+only one sample is present, no batch correction is performed.}
+
 \item{cluster_col}{Name of the \code{colData} column to store cluster
 labels (default "cell_cluster").}
 
@@ -66,12 +82,57 @@ labels (default "cell_cluster").}
 pre-computed cluster labels. If provided, clustering is skipped entirely
 and these labels are used. Set to NULL (default) to perform clustering.}
 
+\item{cluster_method}{Clustering algorithm to use. \code{"leiden"} (default)
+uses shared nearest-neighbor graph with Leiden community detection.
+\code{"mbkmeans"} uses mini-batch k-means, which is much faster for large
+datasets but requires specifying the number of clusters.}
+
+\item{n_clusters}{Number of clusters for mini-batch k-means (default NULL).
+Only used when \code{cluster_method = "mbkmeans"}. If NULL, estimated
+automatically as \code{round(sqrt(ncol(spe) / 2))} capped between 5
+and 50.}
+
+\item{subsample}{Maximum number of cells to cluster directly (default NULL).
+When set and \code{ncol(spe)} exceeds this value, a subsample is
+clustered and remaining cells are assigned to the nearest cluster centroid
+in PCA space. This "sketch" approach dramatically speeds up clustering for
+very large datasets (e.g., > 100k cells).}
+
+\item{subsample_method}{Sampling method when \code{subsample} is used.
+\code{"leverage"} (default) samples cells with probability proportional
+to their PCA leverage scores, which preferentially selects cells in
+sparse regions of expression space (e.g., rare cell types).
+\code{"random"} uses uniform random sampling.}
+
+\item{leverage_alpha}{Mixing weight between leverage and uniform sampling
+(default NULL = pure leverage). When set to a value in (0, 1), sampling
+probabilities are \code{alpha * leverage + (1 - alpha) * uniform}.
+Only used when \code{subsample_method = "leverage"}.}
+
+\item{num_threads}{Number of threads for SNN graph construction and Leiden
+community detection (default 1). Passed to
+\code{bluster::NNGraphParam(num.threads = )}.}
+
+\item{BPPARAM}{A \code{BiocParallelParam} object for parallel
+covariate regression and mini-batch k-means (default NULL = serial).}
+
+\item{BSPARAM}{A \code{BiocSingularParam} object for PCA computation
+(default \code{BiocSingular::IrlbaParam()}, fast approximate PCA
+suitable for single-cell-resolution datasets). Set to
+\code{BiocSingular::ExactParam()} for an exact full SVD if results
+need to be bit-identical to base \code{prcomp}.}
+
+\item{BNPARAM}{A \linkS4class{BiocNeighborParam} object for nearest-neighbor
+search in SNN graph construction (default NULL = exact kNN). Set to
+\code{BiocNeighbors::HnswParam()} for approximate NN.}
+
 \item{seed}{Random seed for reproducibility (default 42).}
 }
 \value{
 A \linkS4class{SpatialExperiment} object with cluster labels in
 \code{colData(spe)[[cluster_col]]}. PCA results are stored in
-\code{reducedDim(spe, "PCA")}.
+\code{reducedDim(spe, "PCA")}. When Harmony batch correction is applied,
+the corrected embedding is stored in \code{reducedDim(spe, "HARMONY")}.
 }
 \description{
 Performs coarse clustering of cells in gene expression space to group
@@ -85,6 +146,11 @@ runs PCA, and clusters using a shared nearest-neighbor graph. Optionally,
 QC-related covariates (library size, cell area, etc.) can be regressed
 out of the expression matrix before PCA to prevent QC metrics from
 driving the clustering.
+
+For multi-sample datasets, batch effects are corrected using Harmony
+(Korsunsky et al., Nature Methods 2019) on the PCA embedding before
+clustering. This produces consistent cluster labels across samples
+while downstream QC operates per-sample.
 }
 \examples{
 library(CellSweeper)

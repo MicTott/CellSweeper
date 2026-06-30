@@ -2,7 +2,7 @@
 #'
 #' Removes obvious debris and impossible segmentations from single-cell
 #' resolution spatial transcriptomics data. This is Level 1 of the CellSweeper
-#' QC framework and is intentionally permissive — it removes only clear junk
+#' QC framework and is intentionally permissive <U+2014> it removes only clear junk
 #' before clustering.
 #'
 #' @param spe A \linkS4class{SpatialExperiment} object.
@@ -68,7 +68,6 @@ globalFilter <- function(spe,
                          area_col = "Area_um",
                          neg_col = "altexps_NegPrb_percent",
                          add_transcript_density = TRUE) {
-
     # --- Input validation ---
     if (!is(spe, "SpatialExperiment")) {
         stop("'spe' must be a SpatialExperiment object.")
@@ -79,11 +78,11 @@ globalFilter <- function(spe,
 
     if (!counts_col %in% cd_names) {
         stop("Column '", counts_col, "' not found in colData. ",
-             "Run scuttle::addPerCellQCMetrics() first.")
+            "Run scuttle::addPerCellQCMetrics() first.")
     }
     if (!genes_col %in% cd_names) {
         stop("Column '", genes_col, "' not found in colData. ",
-             "Run scuttle::addPerCellQCMetrics() first.")
+            "Run scuttle::addPerCellQCMetrics() first.")
     }
 
     # --- Build keep mask ---
@@ -100,7 +99,7 @@ globalFilter <- function(spe,
     if (!is.null(max_area) || !is.null(min_area)) {
         if (!area_col %in% cd_names) {
             message("Column '", area_col, "' not found in colData. ",
-                    "Skipping area-based filtering.")
+                "Skipping area-based filtering.")
         } else {
             if (!is.null(max_area)) {
                 keep <- keep & (cd[[area_col]] <= max_area)
@@ -115,7 +114,7 @@ globalFilter <- function(spe,
     if (!is.null(max_neg_prop) && !is.null(neg_col)) {
         if (!neg_col %in% cd_names) {
             message("Column '", neg_col, "' not found in colData. ",
-                    "Skipping negative probe filtering.")
+                "Skipping negative probe filtering.")
         } else {
             keep <- keep & (cd[[neg_col]] <= max_neg_prop)
         }
@@ -136,7 +135,7 @@ globalFilter <- function(spe,
     n_removed <- sum(!keep)
     if (n_removed > 0) {
         message("globalFilter: removed ", n_removed, "/", n_start,
-                " cells (", round(100 * n_removed / n_start, 1), "%)")
+            " cells (", round(100 * n_removed / n_start, 1), "%)")
     } else {
         message("globalFilter: all ", n_start, " cells passed filters")
     }

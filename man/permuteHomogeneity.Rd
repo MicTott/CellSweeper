@@ -10,6 +10,8 @@ permuteHomogeneity(
   k = 20,
   n_permutations = 500,
   samples = "sample_id",
+  BPPARAM = NULL,
+  BNPARAM = NULL,
   seed = 42
 )
 }
@@ -29,12 +31,20 @@ labels (default "cell_cluster").}
 \item{samples}{Column name in \code{colData} for sample IDs
 (default "sample_id").}
 
+\item{BPPARAM}{A \code{BiocParallelParam} object for parallel
+permutation computation (default NULL = serial). Set to e.g.
+\code{BiocParallel::MulticoreParam(4)} for 4-core parallelism.}
+
+\item{BNPARAM}{A \linkS4class{BiocNeighborParam} object specifying the
+nearest-neighbor algorithm (default NULL = exact). Set to
+\code{BiocNeighbors::HnswParam()} for approximate NN on large datasets.}
+
 \item{seed}{Random seed for reproducibility (default 42).}
 }
 \value{
-A data.frame with one row per cluster and columns:
-\code{cluster}, \code{observed_homogeneity}, \code{null_mean},
-\code{null_sd}, \code{z_score}, \code{p_value}.
+A data.frame with one row per (sample, cluster) pair and columns:
+\code{sample}, \code{cluster}, \code{observed_homogeneity},
+\code{null_mean}, \code{null_sd}, \code{z_score}, \code{p_value}.
 }
 \description{
 Computes a permutation null for neighborhood homogeneity to determine

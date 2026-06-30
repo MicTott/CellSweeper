@@ -14,9 +14,11 @@ vignette: >
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
     collapse = TRUE,
-    comment = "#>",
-    message = TRUE
-    
+    comment  = "#>",
+    message  = TRUE,
+    warning  = FALSE,
+    fig.width  = 6,
+    fig.height = 4
 )
 ```
 
@@ -24,7 +26,7 @@ knitr::opts_chunk$set(
 
 **CellSweeper** provides cluster-aware quality control (QC) for single-cell
 resolution spatial transcriptomics data, including platforms such as Xenium,
-CosMx, MERFISH, Stereo-seq, Slide-seq, and VisiumHD.
+CosMx, MERFISH, Stereo-seq, Slide-seq, and Visium HD.
 
 It extends the [SpotSweeper](https://bioconductor.org/packages/SpotSweeper)
 framework (Totty, Hicks & Guo, *Nature Methods* 2025) to single-cell
@@ -44,30 +46,87 @@ different types.
    SpotSweeper-style local outlier detection restricted to same-cluster cells,
    applied to both transcriptomic and morphological metrics.
 
-# Quick Start
+# Quick start with a synthetic dataset
 
-```{r quickstart, eval=FALSE}
-#library(CellSweeper)
-devtools::load_all()
+For illustration in the vignette we build a small synthetic
+`SpatialExperiment` with three spatially-coherent cell-type blobs plus a
+handful of near-zero-count outliers per cluster. Real users would substitute
+a Xenium/Visium HD/MERFISH object loaded via SpaceTrooper or another reader.
+
+```{r build-synthetic, message = FALSE}
+library(CellSweeper)
 library(SpatialExperiment)
-library(scuttle)
+library(SummarizedExperiment)
+suppressPackageStartupMessages({
+    library(scuttle)
+})
 
-# Load your SpatialExperiment (e.g., from SpaceTrooper or STexampleData)
-# spe <- readXeniumSPE("/path/to/xenium/output/")
-spe <- STexampleData::STARmapPLUS_mouseBrain()
+set.seed(1)
+n_per <- 80
+n_clusters <- 3
+n_genes <- 200
+n_cells <- n_per * n_clusters
 
-# Compute standard QC metrics
+centers <- matrix(c(0, 0, 100, 0, 50, 100), ncol = 2, byrow = TRUE)
+coords  <- do.call(rbind, lapply(seq_len(n_clusters), function(i) {
+    matrix(rnorm(n_per * 2, mean = 0, sd = 10), ncol = 2) +
+        matrix(rep(centers[i, ], each = n_per), ncol = 2)
+}))
+colnames(coords) <- c("x_centroid", "y_centroid")
+
+base_means <- c(5, 3, 1)
+counts <- do.call(cbind, lapply(seq_len(n_clusters), function(i) {
+    matrix(rpois(n_genes * n_per, lambda = base_means[i]),
+        nrow = n_genes, ncol = n_per)
+}))
+# cluster-specific markers
+for (i in seq_len(n_clusters)) {
+    g <- ((i - 1) * 10 + 1):(i * 10)
+    c <- ((i - 1) * n_per   + 1):(i * n_per)
+    counts[g, c] <- counts[g, c] + 10
+}
+# inject 3 near-zero outliers per cluster
+for (i in seq_len(n_clusters)) {
+    out_idx <- ((i - 1) * n_per + 1):((i - 1) * n_per + 3)
+    counts[, out_idx] <- 0
+    counts[1:2, out_idx] <- 1
+}
+# mark mito genes
+mito_idx <- (n_genes - 9):n_genes
+rownames(counts) <- paste0("Gene", seq_len(n_genes))
+rownames(counts)[mito_idx] <- paste0("MT-Gene", mito_idx)
+colnames(counts) <- paste0("cell_", seq_len(n_cells))
+
+spe <- SpatialExperiment(
+    assays        = list(counts = as(counts, "CsparseMatrix")),
+    spatialCoords = coords,
+    sample_id     = rep("synthetic_sample", n_cells)
+)
 spe <- addPerCellQCMetrics(spe,
     subsets = list(mito = grep("^MT-", rownames(spe))))
 
-# Run full CellSweeper pipeline
-spe <- runCellSweeper(spe)
+# Pre-existing labels (we skip clustering in the quick-start example so
+# the vignette runs in seconds; the per-step walk-through below shows
+# how `clusterCellTypes()` would compute them from scratch).
+spe$true_cluster <- rep(paste0("cluster_", seq_len(n_clusters)),
+    each = n_per)
+spe
+```
 
-# Examine results
+```{r quickstart}
+spe <- runCellSweeper(spe,
+    use_existing   = "true_cluster",
+    metrics        = c("sum", "detected", "subsets_mito_percent"),
+    morpho_metrics = NULL,
+    k              = 20,
+    n_permutations = 50,
+    verbose        = FALSE)
+
 table(spe$cellsweeper_qc)
 
 # Remove flagged cells for downstream analysis
 spe_clean <- spe[, !spe$cellsweeper_qc]
+ncol(spe_clean)
 ```
 
 # Step-by-Step Workflow
@@ -142,6 +201,35 @@ you can skip clustering:
 spe <- clusterCellTypes(spe, use_existing = "my_annotation_column")
 ```
 
+### Multi-sample data
+
+When your `SpatialExperiment` contains multiple samples (i.e., a `sample_id`
+column in `colData` with more than one unique value), `clusterCellTypes()`
+automatically applies [Harmony](https://portals.broadinstitute.org/harmony/)
+batch correction on the PCA embedding before clustering. This removes
+batch effects so that cluster labels are consistent across samples ---
+"cluster_1" represents the same biology in every sample.
+
+Harmony requires the `harmony` package (`install.packages("harmony")`).
+If it is not installed, clustering proceeds on the uncorrected PCA with
+an informative message.
+
+The corrected embedding is stored as `reducedDim(spe, "HARMONY")` for
+inspection. Downstream QC steps (artifact detection, spatial outlier
+detection) still operate independently per sample.
+
+```{r cluster-multisample, eval=FALSE}
+# Multi-sample: Harmony runs automatically
+spe <- clusterCellTypes(spe,
+    samples = "sample_id",   # column identifying samples (default)
+    resolution = 0.5,
+    regress_covariates = FALSE
+)
+
+# Inspect the batch-corrected embedding
+dim(reducedDim(spe, "HARMONY"))
+```
+
 ## Step 4: Flag artifact clusters (Level 2b+c)
 
 Identify entire clusters that are likely technical artifacts. Uses two
@@ -186,7 +274,7 @@ All results are stored in `colData(spe)`:
 ```{r results, eval=FALSE}
 # Per-metric z-scores and outlier flags
 head(colData(spe)[, c("sum_zscore", "sum_outlier",
-                       "detected_zscore", "detected_outlier")])
+    "detected_zscore", "detected_outlier")])
 
 # Combined flags
 table(spe$cellsweeper_outlier)   # within-cluster outliers
@@ -205,28 +293,17 @@ CellSweeper provides several plotting functions (require `ggplot2`).
 The default rendering uses points at cell centroid coordinates. These work
 on any `SpatialExperiment`, regardless of whether polygon data is available.
 
-```{r viz-points, eval=FALSE}
+```{r viz-points, fig.width = 5, fig.height = 4}
 library(ggplot2)
 
 # Spatial plot colored by library size, outliers circled in red
 plotSpatialOutliers(spe, metric = "sum")
 
-# Same plot for mitochondrial percentage
-plotSpatialOutliers(spe, metric = "subsets_mito_percent",
-    outlier_col = "subsets_mito_percent_outlier",
-    colors = c("grey90", "darkred"))
-
 # Per-cluster QC distributions (violin + boxplot)
 plotClusterQC(spe, metric = "sum")
-plotClusterQC(spe, metric = "detected")
 
 # Spatial clusters with artifact clusters greyed out
 plotSpatialDispersion(spe)
-
-# Cluster-level QC summary (Mahalanobis distances + spatial homogeneity)
-summary_plots <- plotClusterSummary(spe)
-summary_plots$mahalanobis
-summary_plots$homogeneity
 ```
 
 ## Polygon-based visualization

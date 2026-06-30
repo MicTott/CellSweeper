@@ -8,7 +8,8 @@ computeNeighborhoodHomogeneity(
   spe,
   cluster_col = "cell_cluster",
   k = 20,
-  samples = "sample_id"
+  samples = "sample_id",
+  BNPARAM = NULL
 )
 }
 \arguments{
@@ -22,6 +23,10 @@ labels (default "cell_cluster").}
 
 \item{samples}{Column name in \code{colData} for sample IDs
 (default "sample_id"). Spatial neighbors are computed within samples.}
+
+\item{BNPARAM}{A \linkS4class{BiocNeighborParam} object specifying the
+nearest-neighbor algorithm (default NULL = exact). Set to
+\code{BiocNeighbors::HnswParam()} for approximate NN on large datasets.}
 }
 \value{
 A \linkS4class{SpatialExperiment} object with

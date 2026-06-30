@@ -8,3 +8,8 @@ docs
 *.so
 *.dll
 claude/
+.DS_Store
+.claude/
+*.Rcheck/
+CellSweeper_*.tar.gz
+Rplots.pdf

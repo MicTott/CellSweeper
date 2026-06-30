@@ -1,17 +1,22 @@
 Package: CellSweeper
-Title: Cluster-Aware Spatial Quality Control for Single-Cell Resolution
-    Spatial Transcriptomics
+Title: Cluster-Aware Spatial QC for Single-Cell Resolution Transcriptomics
 Version: 0.99.0
-Date: 2026-02-17
+Date: 2026-06-30
 Authors@R: c(
     person("Michael", "Totty", email = "mictott@gmail.com",
            role = c("aut", "cre"),
-           comment = c(ORCID = "0000-0002-9292-8556")))
+           comment = c(ORCID = "0000-0002-9292-8556")),
+    person("Stephanie", "Hicks", role = "aut"),
+    person("Boyi", "Guo", role = "aut"))
 Description: Spatially aware quality control (QC) for single-cell resolution
-    spatial transcriptomics data (Xenium, CosMx, MERFISH, Stereo-seq,
-    Slide-seq, VisiumHD). CellSweeper extends the SpotSweeper framework by
-    first clustering cells in gene expression space, then performing
-    spatially-aware outlier detection within each cell type cluster. 
+    spatial transcriptomics data such as Xenium, CosMx, MERFISH, Stereo-seq,
+    Slide-seq, and Visium HD. CellSweeper extends the SpotSweeper framework
+    by first clustering cells in gene expression space and then performing
+    spatially aware outlier detection within each cluster. A three-level
+    pipeline removes obvious debris, identifies entire artifact clusters via
+    multivariate pseudobulk outlier detection and spatial dispersion testing,
+    and flags within-cluster outlier cells on transcriptomic and
+    morphological metrics.
 License: MIT + file LICENSE
 URL: https://MicTott.github.io/CellSweeper/, https://github.com/MicTott/CellSweeper
 BugReports: https://github.com/MicTott/CellSweeper/issues
@@ -25,7 +30,6 @@ biocViews:
     Clustering
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
 Depends:
     R (>= 4.4.0)
 Imports:
@@ -33,23 +37,29 @@ Imports:
     SingleCellExperiment,
     SummarizedExperiment,
     BiocNeighbors,
+    BiocParallel,
+    BiocSingular,
     scran,
     scater,
     bluster,
-    stats,
     Matrix,
-    methods
+    stats,
+    methods,
+    withr
 Suggests:
     scuttle,
     robustbase,
+    harmony,
     escheR,
     ggplot2,
     sf,
-    BiocParallel,
+    mbkmeans,
     BiocStyle,
     testthat (>= 3.0.0),
     STexampleData,
+    spatialLIBD,
     knitr,
     rmarkdown
 Config/testthat/edition: 3
 VignetteBuilder: knitr
+Config/roxygen2/version: 8.0.0

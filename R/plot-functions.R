@@ -1,7 +1,7 @@
 # Suppress R CMD check NOTEs for ggplot2 aes() variables
 utils::globalVariables(c(".data", "display_cluster", "cluster_qc_mahal",
-                          "cluster_artifact_flag",
-                          "cluster_spatial_homogeneity"))
+    "cluster_artifact_flag",
+    "cluster_spatial_homogeneity"))
 
 # ============================================================
 # Internal polygon helpers
@@ -115,7 +115,7 @@ plotSpatialOutliers <- function(spe,
 
     if (!requireNamespace("ggplot2", quietly = TRUE)) {
         stop("Package 'ggplot2' is required for plotting. ",
-             "Install with: install.packages('ggplot2')")
+            "Install with: install.packages('ggplot2')")
     }
 
     if (!is(spe, "SpatialExperiment")) {
@@ -127,7 +127,7 @@ plotSpatialOutliers <- function(spe,
     if (identical(use_polygons, TRUE)) {
         if (!.hasPolygons(spe, polygon_col)) {
             stop("Polygon column '", polygon_col,
-                 "' not found or sf package not available.")
+                "' not found or sf package not available.")
         }
         render_polygons <- TRUE
     } else if (identical(use_polygons, "auto")) {
@@ -169,11 +169,11 @@ plotSpatialOutliers <- function(spe,
             ggplot2::coord_sf() +
             ggplot2::theme_minimal() +
             ggplot2::labs(title = paste0("Spatial: ", metric),
-                          fill = metric)
+                fill = metric)
 
         if (has_outliers) {
             sf_outlier <- sf_df[sf_df[[outlier_col]] == TRUE &
-                                !is.na(sf_df[[outlier_col]]), ]
+                !is.na(sf_df[[outlier_col]]), ]
             if (nrow(sf_outlier) > 0) {
                 p <- p + ggplot2::geom_sf(
                     data = sf_outlier,
@@ -195,26 +195,26 @@ plotSpatialOutliers <- function(spe,
         coord_cols <- colnames(coords)
 
         p <- ggplot2::ggplot(df, ggplot2::aes(
-                x = .data[[coord_cols[1]]],
-                y = .data[[coord_cols[2]]])) +
+            x = .data[[coord_cols[1]]],
+            y = .data[[coord_cols[2]]])) +
             ggplot2::geom_point(
                 ggplot2::aes(color = .data[[metric]]),
                 size = point_size) +
             ggplot2::scale_color_gradient(low = colors[1],
-                                          high = colors[2]) +
+                high = colors[2]) +
             ggplot2::coord_fixed() +
             ggplot2::theme_minimal() +
             ggplot2::labs(title = paste0("Spatial: ", metric),
-                          color = metric)
+                color = metric)
 
         if (has_outliers) {
             df_outlier <- df[df[[outlier_col]] == TRUE &
-                             !is.na(df[[outlier_col]]), ]
+                !is.na(df[[outlier_col]]), ]
             if (nrow(df_outlier) > 0) {
                 p <- p + ggplot2::geom_point(
                     data = df_outlier,
                     ggplot2::aes(x = .data[[coord_cols[1]]],
-                                 y = .data[[coord_cols[2]]]),
+                        y = .data[[coord_cols[2]]]),
                     color = outlier_color, shape = 1,
                     size = point_size + 1, stroke = outlier_stroke)
             }
@@ -268,7 +268,7 @@ plotClusterQC <- function(spe,
 
     if (!requireNamespace("ggplot2", quietly = TRUE)) {
         stop("Package 'ggplot2' is required for plotting. ",
-             "Install with: install.packages('ggplot2')")
+            "Install with: install.packages('ggplot2')")
     }
 
     if (!is(spe, "SpatialExperiment")) {
@@ -291,23 +291,23 @@ plotClusterQC <- function(spe,
     has_outliers <- outlier_col %in% colnames(cd)
 
     p <- ggplot2::ggplot(cd, ggplot2::aes(x = .data[[cluster_col]],
-                                           y = .data[[metric]])) +
+        y = .data[[metric]])) +
         ggplot2::geom_violin(fill = "lightblue", alpha = 0.6) +
         ggplot2::geom_boxplot(width = 0.1, outlier.shape = NA) +
         ggplot2::theme_minimal() +
         ggplot2::labs(title = paste0("Per-cluster: ", metric),
-                      x = "Cluster", y = metric) +
+            x = "Cluster", y = metric) +
         ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45,
-                                                            hjust = 1))
+            hjust = 1))
 
     if (has_outliers) {
         cd_outlier <- cd[cd[[outlier_col]] == TRUE &
-                         !is.na(cd[[outlier_col]]), ]
+            !is.na(cd[[outlier_col]]), ]
         if (nrow(cd_outlier) > 0) {
             p <- p + ggplot2::geom_jitter(
                 data = cd_outlier,
                 ggplot2::aes(x = .data[[cluster_col]],
-                             y = .data[[metric]]),
+                    y = .data[[metric]]),
                 color = "red", alpha = 0.7, size = 0.8, width = 0.1)
         }
     }
@@ -375,7 +375,7 @@ plotSpatialDispersion <- function(spe,
 
     if (!requireNamespace("ggplot2", quietly = TRUE)) {
         stop("Package 'ggplot2' is required for plotting. ",
-             "Install with: install.packages('ggplot2')")
+            "Install with: install.packages('ggplot2')")
     }
 
     if (!is(spe, "SpatialExperiment")) {
@@ -387,7 +387,7 @@ plotSpatialDispersion <- function(spe,
     if (identical(use_polygons, TRUE)) {
         if (!.hasPolygons(spe, polygon_col)) {
             stop("Polygon column '", polygon_col,
-                 "' not found or sf package not available.")
+                "' not found or sf package not available.")
         }
         render_polygons <- TRUE
     } else if (identical(use_polygons, "auto")) {
@@ -416,8 +416,8 @@ plotSpatialDispersion <- function(spe,
                     seq_len(n_real)],
                 c = 100, l = 65)
             list(values = c(custom_colors,
-                            stats::setNames(hue_colors, real_clusters)),
-                 na.value = "grey50")
+                stats::setNames(hue_colors, real_clusters)),
+            na.value = "grey50")
         } else {
             NULL
         }
@@ -472,9 +472,9 @@ plotSpatialDispersion <- function(spe,
         }
 
         p <- ggplot2::ggplot(df, ggplot2::aes(
-                x = .data[[coord_cols[1]]],
-                y = .data[[coord_cols[2]]],
-                color = display_cluster)) +
+            x = .data[[coord_cols[1]]],
+            y = .data[[coord_cols[2]]],
+            color = display_cluster)) +
             ggplot2::geom_point(size = point_size) +
             ggplot2::coord_fixed() +
             ggplot2::theme_minimal() +
@@ -530,11 +530,11 @@ plotSpatialDispersion <- function(spe,
 plotClusterSummary <- function(spe,
                                cluster_col = "cell_cluster",
                                metrics = c("sum", "detected",
-                                           "subsets_mito_percent")) {
+                                   "subsets_mito_percent")) {
 
     if (!requireNamespace("ggplot2", quietly = TRUE)) {
         stop("Package 'ggplot2' is required for plotting. ",
-             "Install with: install.packages('ggplot2')")
+            "Install with: install.packages('ggplot2')")
     }
 
     if (!is(spe, "SpatialExperiment")) {
@@ -552,43 +552,43 @@ plotClusterSummary <- function(spe,
     # --- Mahalanobis distance bar plot ---
     if ("cluster_qc_mahal" %in% colnames(cd)) {
         mahal_df <- unique(cd[, c(cluster_col, "cluster_qc_mahal",
-                                   "cluster_artifact_flag")])
+            "cluster_artifact_flag")])
 
         plots$mahalanobis <- ggplot2::ggplot(
             mahal_df,
             ggplot2::aes(x = stats::reorder(.data[[cluster_col]],
-                                             cluster_qc_mahal),
-                         y = cluster_qc_mahal,
-                         fill = cluster_artifact_flag)) +
+                cluster_qc_mahal),
+            y = cluster_qc_mahal,
+            fill = cluster_artifact_flag)) +
             ggplot2::geom_col() +
             ggplot2::scale_fill_manual(values = c("FALSE" = "steelblue",
-                                                   "TRUE" = "firebrick")) +
+                "TRUE" = "firebrick")) +
             ggplot2::coord_flip() +
             ggplot2::theme_minimal() +
             ggplot2::labs(title = "Cluster Mahalanobis Distance",
-                          x = "Cluster", y = "Mahalanobis Distance",
-                          fill = "Artifact")
+                x = "Cluster", y = "Mahalanobis Distance",
+                fill = "Artifact")
     }
 
     # --- Spatial homogeneity bar plot ---
     if ("cluster_spatial_homogeneity" %in% colnames(cd)) {
         homo_df <- unique(cd[, c(cluster_col, "cluster_spatial_homogeneity",
-                                  "cluster_artifact_flag")])
+            "cluster_artifact_flag")])
 
         plots$homogeneity <- ggplot2::ggplot(
             homo_df,
             ggplot2::aes(x = stats::reorder(.data[[cluster_col]],
-                                             cluster_spatial_homogeneity),
-                         y = cluster_spatial_homogeneity,
-                         fill = cluster_artifact_flag)) +
+                cluster_spatial_homogeneity),
+            y = cluster_spatial_homogeneity,
+            fill = cluster_artifact_flag)) +
             ggplot2::geom_col() +
             ggplot2::scale_fill_manual(values = c("FALSE" = "steelblue",
-                                                   "TRUE" = "firebrick")) +
+                "TRUE" = "firebrick")) +
             ggplot2::coord_flip() +
             ggplot2::theme_minimal() +
             ggplot2::labs(title = "Cluster Spatial Homogeneity",
-                          x = "Cluster", y = "Neighborhood Homogeneity",
-                          fill = "Artifact")
+                x = "Cluster", y = "Neighborhood Homogeneity",
+                fill = "Artifact")
     }
 
     # --- Metric distributions per cluster ---

@@ -4,9 +4,9 @@
 \name{CellSweeper-package}
 \alias{CellSweeper}
 \alias{CellSweeper-package}
-\title{CellSweeper: Cluster-Aware Spatial Quality Control for Single-Cell Resolution Spatial Transcriptomics}
+\title{CellSweeper: Cluster-Aware Spatial QC for Single-Cell Resolution Transcriptomics}
 \description{
-Cluster-aware quality control (QC) for single-cell resolution spatial transcriptomics data (Xenium, CosMx, MERFISH, Stereo-seq, Slide-seq, VisiumHD). CellSweeper extends the SpotSweeper framework by first clustering cells in gene expression space, then performing spatially-aware outlier detection within each cluster. This three-level approach (global pre-filtering, cluster-level artifact detection, within-cluster spatial QC) restores the local homogeneity assumption required for robust spatial outlier detection at single-cell resolution.
+Spatially aware quality control (QC) for single-cell resolution spatial transcriptomics data such as Xenium, CosMx, MERFISH, Stereo-seq, Slide-seq, and Visium HD. CellSweeper extends the SpotSweeper framework by first clustering cells in gene expression space and then performing spatially aware outlier detection within each cluster. A three-level pipeline removes obvious debris, identifies entire artifact clusters via multivariate pseudobulk outlier detection and spatial dispersion testing, and flags within-cluster outlier cells on transcriptomic and morphological metrics.
 }
 \seealso{
 Useful links:
@@ -22,8 +22,9 @@ Useful links:
 
 Authors:
 \itemize{
-  \item Stephanie Hicks \email{shicks19@jhu.edu} (\href{https://orcid.org/0000-0002-7858-0231}{ORCID})
-  \item Boyi Guo \email{boyi.guo.work@gmail.com} (\href{https://orcid.org/0000-0003-2950-2349}{ORCID})
+  \item Michael Totty \email{mictott@gmail.com} (\href{https://orcid.org/0000-0002-9292-8556}{ORCID})
+  \item Stephanie Hicks
+  \item Boyi Guo
 }
 
 }

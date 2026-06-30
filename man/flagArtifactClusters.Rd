@@ -15,6 +15,8 @@ flagArtifactClusters(
   dispersion_threshold = 0.05,
   require_both = TRUE,
   samples = "sample_id",
+  BPPARAM = NULL,
+  BNPARAM = NULL,
   seed = 42
 )
 }
@@ -28,7 +30,7 @@ labels (default "cell_cluster").}
 \item{metrics}{Character vector of \code{colData} column names to use for
 multivariate outlier detection. Columns not found are skipped with a
 message. Default: \code{c("sum", "detected", "subsets_mito_percent",
-  "Area_um", "log2CountArea")} (matching SpaceTrooper output).}
+"Area_um", "log2CountArea")} (matching SpaceTrooper output).}
 
 \item{mahal_threshold}{Threshold for Mahalanobis distance outlier detection.
 Use "auto" (default) for chi-squared based threshold at p = 0.05, or a
@@ -54,6 +56,15 @@ suffices.}
 
 \item{samples}{Column name in \code{colData} for sample IDs
 (default "sample_id").}
+
+\item{BPPARAM}{A \code{BiocParallelParam} object for parallel
+permutation testing (default NULL = serial). Passed to
+\code{\link{permuteHomogeneity}}.}
+
+\item{BNPARAM}{A \linkS4class{BiocNeighborParam} object for nearest-neighbor
+search (default NULL = exact). Passed to
+\code{\link{computeNeighborhoodHomogeneity}} and
+\code{\link{permuteHomogeneity}}.}
 
 \item{seed}{Random seed for reproducibility (default 42).}
 }

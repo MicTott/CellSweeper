@@ -50,13 +50,13 @@ test_that("plotClusterSummary returns list of ggplots", {
 test_that("plotSpatialOutliers errors on missing metric", {
     skip_if_not_installed("ggplot2")
     expect_error(plotSpatialOutliers(spe, metric = "nonexistent"),
-                 "not found")
+        "not found")
 })
 
 test_that("plotClusterQC errors on missing cluster column", {
     skip_if_not_installed("ggplot2")
     expect_error(plotClusterQC(spe, cluster_col = "nonexistent"),
-                 "not found")
+        "not found")
 })
 
 test_that("plotSpatialOutliers errors on non-SPE", {
@@ -73,7 +73,7 @@ test_that("plotSpatialOutliers auto-falls back to points when no polygons", {
     p <- plotSpatialOutliers(spe, metric = "sum", use_polygons = "auto")
     expect_s3_class(p, "ggplot")
     layer_geoms <- vapply(p$layers, function(l) class(l$geom)[1],
-                          character(1))
+        character(1))
     expect_true("GeomPoint" %in% layer_geoms)
 })
 
@@ -112,15 +112,15 @@ test_that("plotSpatialOutliers renders polygons when available", {
     skip_if_not_installed("sf")
 
     spe_poly <- make_test_spe(n_cells_per_cluster = 50, n_outliers = 3,
-                              seed = 42, include_polygons = TRUE)
+        seed = 42, include_polygons = TRUE)
     colData(spe_poly)$cellsweeper_outlier <-
         abs(rnorm(ncol(spe_poly))) > 2
 
     p <- plotSpatialOutliers(spe_poly, metric = "sum",
-                             use_polygons = TRUE)
+        use_polygons = TRUE)
     expect_s3_class(p, "ggplot")
     layer_geoms <- vapply(p$layers, function(l) class(l$geom)[1],
-                          character(1))
+        character(1))
     expect_true("GeomSf" %in% layer_geoms)
 })
 
@@ -129,13 +129,13 @@ test_that("plotSpatialDispersion renders polygons when available", {
     skip_if_not_installed("sf")
 
     spe_poly <- make_test_spe(n_cells_per_cluster = 50, n_outliers = 3,
-                              seed = 42, include_polygons = TRUE)
+        seed = 42, include_polygons = TRUE)
     spe_poly$cell_cluster <- spe_poly$true_cluster
 
     p <- plotSpatialDispersion(spe_poly, use_polygons = TRUE)
     expect_s3_class(p, "ggplot")
     layer_geoms <- vapply(p$layers, function(l) class(l$geom)[1],
-                          character(1))
+        character(1))
     expect_true("GeomSf" %in% layer_geoms)
 })
 

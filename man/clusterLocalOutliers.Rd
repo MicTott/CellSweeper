@@ -15,8 +15,11 @@ clusterLocalOutliers(
   z_threshold = 3,
   direction = "both",
   log_transform = TRUE,
-  combine = "union",
-  samples = "sample_id"
+  combine = c("union", "intersection"),
+  robust_z = c("mad", "iglewicz"),
+  samples = "sample_id",
+  BPPARAM = NULL,
+  BNPARAM = NULL
 )
 }
 \arguments{
@@ -59,8 +62,25 @@ metrics before computing z-scores.}
 \code{"union"} (default) flags a cell if outlier in ANY metric.
 \code{"intersection"} flags only if outlier in ALL metrics.}
 
+\item{robust_z}{Scaling convention for the modified z-score. \code{"mad"}
+(default) uses the standard scaled MAD (\code{mad(x)} with
+\code{constant = 1.4826}) as a robust SD estimate, i.e.,
+\code{z = (x - median) / mad(x)}; threshold \code{z_threshold = 3} then
+corresponds to roughly 3 SD-equivalents. \code{"iglewicz"} uses the
+Iglewicz-Hoaglin modified z-score
+\code{z = 0.6745 * (x - median) / mad(x, constant = 1)};
+a common threshold is 3.5.}
+
 \item{samples}{Column name in \code{colData} for sample IDs
 (default "sample_id").}
+
+\item{BPPARAM}{A \code{BiocParallelParam} object for parallel
+processing across clusters (default NULL = serial). Set to e.g.
+\code{BiocParallel::MulticoreParam(4)} for 4-core parallelism.}
+
+\item{BNPARAM}{A \linkS4class{BiocNeighborParam} object specifying the
+nearest-neighbor algorithm (default NULL = exact). Set to
+\code{BiocNeighbors::HnswParam()} for approximate NN on large datasets.}
 }
 \value{
 A \linkS4class{SpatialExperiment} object with the following columns

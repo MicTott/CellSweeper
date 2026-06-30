@@ -14,62 +14,56 @@ runCellSweeper(
   regress_covariates = TRUE,
   n_hvgs = 2000,
   use_existing = NULL,
+  cluster_method = c("leiden", "mbkmeans"),
+  subsample = NULL,
+  subsample_method = c("leverage", "random"),
+  leverage_alpha = NULL,
+  num_threads = 1,
   n_permutations = 500,
   metrics = c("sum", "detected", "subsets_mito_percent"),
   morpho_metrics = c("Area_um", "log2AspectRatio", "log2CountArea"),
   k = 50,
   z_threshold = 3,
-  combine = "union",
+  combine = c("union", "intersection"),
+  robust_z = c("mad", "iglewicz"),
   samples = "sample_id",
+  BPPARAM = NULL,
+  BSPARAM = NULL,
+  BNPARAM = NULL,
   verbose = TRUE,
-  seed = 42
+  seed = 42,
+  ...
 )
 }
 \arguments{
 \item{spe}{A \linkS4class{SpatialExperiment} object with QC metrics in
 \code{colData} (e.g., from \code{scuttle::addPerCellQCMetrics()}).}
 
-\item{min_counts}{Minimum total counts for global filter (default 5).}
+\item{min_counts, min_genes, min_area, max_area}{Thresholds passed to
+\code{\link{globalFilter}}.}
 
-\item{min_genes}{Minimum unique genes for global filter (default 5).}
+\item{resolution, regress_covariates, n_hvgs, use_existing, cluster_method, subsample, subsample_method, leverage_alpha, num_threads, BSPARAM}{Passed to \code{\link{clusterCellTypes}}.}
 
-\item{max_area}{Maximum cell area for global filter (default NULL).}
+\item{n_permutations}{Number of permutations for the spatial coherence
+test (default 500). Passed to \code{\link{flagArtifactClusters}}.}
 
-\item{min_area}{Minimum cell area for global filter (default NULL).}
+\item{metrics, morpho_metrics, k, z_threshold, combine, robust_z}{Passed to \code{\link{clusterLocalOutliers}}.}
 
-\item{resolution}{Leiden clustering resolution (default 0.5).}
+\item{samples}{Column name for sample IDs (default \code{"sample_id"}).
+Shared across all stages.}
 
-\item{regress_covariates}{Logical. Regress QC covariates before PCA
-(default TRUE).}
-
-\item{n_hvgs}{Number of HVGs for clustering (default 2000).}
-
-\item{use_existing}{Name of existing \code{colData} column with cluster
-labels (default NULL, perform clustering).}
-
-\item{n_permutations}{Number of permutations for spatial coherence test
-(default 500).}
-
-\item{metrics}{Transcriptomic QC metrics for outlier detection
-(default: \code{c("sum", "detected", "subsets_mito_percent")}).}
-
-\item{morpho_metrics}{Morphological metrics for outlier detection
-(default: \code{c("Area_um", "log2AspectRatio", "log2CountArea")},
-matching SpaceTrooper output). Missing columns are skipped.}
-
-\item{k}{Number of spatial nearest neighbors for within-cluster QC
-(default 50).}
-
-\item{z_threshold}{Z-score threshold for outlier detection (default 3).}
-
-\item{combine}{Method for combining outlier flags: \code{"union"}
-(default) or \code{"intersection"}.}
-
-\item{samples}{Column name for sample IDs (default "sample_id").}
+\item{BPPARAM, BNPARAM}{Shared parallelization and nearest-neighbor
+parameters; forwarded to clustering, artifact detection, and
+within-cluster outlier detection.}
 
 \item{verbose}{Logical. Print progress messages (default TRUE).}
 
 \item{seed}{Random seed for reproducibility (default 42).}
+
+\item{...}{Additional arguments forwarded to
+\code{\link{clusterCellTypes}}, \code{\link{flagArtifactClusters}},
+and \code{\link{clusterLocalOutliers}}; useful for advanced options
+that the wrapper does not surface explicitly.}
 }
 \value{
 A \linkS4class{SpatialExperiment} object with all QC flags in

@@ -1,12 +1,14 @@
+citHeader("To cite CellSweeper, please use:")
+
 bibentry(
-    bibtype = "Manual",
-    title = "CellSweeper: Cluster-Aware Spatial Quality Control for Single-Cell Resolution Spatial Transcriptomics",
-    author = c(
+    bibtype  = "Manual",
+    title    = "CellSweeper: Cluster-Aware Spatial QC for Single-Cell Resolution Transcriptomics",
+    author   = c(
         person("Michael", "Totty"),
         person("Stephanie", "Hicks"),
-        person("Boyi", "Guo")
+        person("Boyi",     "Guo")
     ),
-    year = 2026,
-    note = "R package version 0.99.0",
-    url = "https://github.com/MicTott/CellSweeper"
+    year     = 2026,
+    note     = "R package version 0.99.0",
+    url      = "https://github.com/MicTott/CellSweeper"
 )

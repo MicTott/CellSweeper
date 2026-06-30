@@ -10,3 +10,10 @@
 ^docs$
 ^pkgdown$
 ^\.claude$
+^CellSweeper_.*\.tar\.gz$
+^CellSweeper\.Rcheck$
+^Rplots\.pdf$
+^CellSweeper_manuscript_draft\.docx$
+^vignettes/\.Rhistory$
+^\.DS_Store$
+^.*\.DS_Store$
